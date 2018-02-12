@@ -1,4 +1,4 @@
-from W2VPipeline import *
+
 
 import numpy as np
 import pandas as pd
@@ -116,6 +116,7 @@ class PredictorPipeline(object):
         false_negatives = np.array([0] * 10, dtype='d')
         true_negatives = np.array([0] * 10, dtype='d')
 
+        accuracy = np.array([0] * 10, dtype='d')
         threshold = [0.0, 0.0001, 0.001, 0.01, 0.05, 0.1, 0.2, 0.3, 0.4, 0.5]
 
         for j, thres in enumerate(threshold):
@@ -134,6 +135,7 @@ class PredictorPipeline(object):
                 if not doc and test_predictions[i] < thres:
                     true_negatives[j] += 1
 
+
         true_labels = np.sum(test_targets)
         false_labels = len(test_targets) - true_labels
         print true_labels
@@ -142,6 +144,13 @@ class PredictorPipeline(object):
         fpr = false_positives / (false_positives + true_negatives)
         fdr = false_positives / (false_positives + true_positives)
         tpr = true_positives / true_labels
+
+        for j, thres in enumerate(threshold):
+            corrects = sum((test_predictions >= thres) == test_targets)
+            errors = len(test_predictions) - corrects
+            error_rate = float(errors) / len(test_predictions)
+            accuracy[j] = 1 - error_rate
+
         roc = [('threshold', threshold),
                ('false_positives', false_positives),
                ('true_positives', true_positives),
@@ -151,7 +160,8 @@ class PredictorPipeline(object):
                ('false_discovery_rate', fdr),
                ('true_positive_rate', tpr),
                ('precision', 1 - fdr),
-               ('recall', tpr)
+               ('recall', tpr),
+               ('accuracy', accuracy)
                ]
         df = pd.DataFrame.from_items(roc)
 
@@ -173,40 +183,3 @@ class PredictorPipeline(object):
         print metrics.auc(fpr, tpr)
         return df
 
-def main():
-    verizon_file = 'verizon_data.csv'
-    verizon_chat = pd.read_csv(verizon_file, sep="\t", header=0,
-                               names=["ID", "utterance", "intent"])
-
-    verizon_test_file = 'BillingTest_v2.txt'
-    verizon_test = pd.read_csv(verizon_test_file, sep="|", header=0,
-                               names=["Count", "Date", "utterance", "C1", "C2", "C3", "intent", "Details"])
-
-    training = verizon_chat
-    testing = verizon_test
-    predictor_pipeline = PredictorPipeline(training, testing)
-    w2v_pipeline = W2VPipeline(training)
-    w2vmodel = w2v_pipeline.train()
-    train_targets, train_regressors = \
-        predictor_pipeline.build_binary_classifying_regressors_using_w2v_from_corpus('Fios.Residential.Billing.LowerBill',
-                                                                                     w2vmodel, predictor_pipeline.training['utterance'],'training')
-    logit = sm.Logit(train_targets, train_regressors)
-    predictor = logit.fit()
-    test_targets, test_regressors = \
-        predictor_pipeline.build_binary_classifying_regressors_using_w2v_from_corpus('Fios.Residential.Billing.LowerBill',
-                                                                                     w2vmodel, predictor_pipeline.testing['utterance'], 'testing')
-    print "total tested points is", len(test_targets)
-    test_predictions = predictor.predict(test_regressors)
-    corrects = sum((test_predictions >= 0.3) == test_targets)
-    errors = len(test_predictions) - corrects
-    error_rate = float(errors) / len(test_predictions)
-
-    print "correct is ", corrects
-    print "errors is ", errors
-    print "error rate is", error_rate
-
-    metrics_df = predictor_pipeline.roc_curve(test_predictions, test_targets, 'Fios.Residential.Billing.LowerBill' )
-    print metrics_df
-
-if __name__ == '__main__':
-    main()
